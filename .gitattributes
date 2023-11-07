@@ -1,1 +1,2 @@
 Live_Street_Address_Management_(SAM)_Addresses.csv filter=lfs diff=lfs merge=lfs -text
+*.geojson filter=lfs diff=lfs merge=lfs -text
