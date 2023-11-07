@@ -41,8 +41,10 @@ import geojson
 import html
 from itertools import chain
 import math
+import os
 import pickle
 import re
+import requests
 from shapely.geometry import shape
 import sys
 
@@ -50,19 +52,23 @@ import sys
 #
 # A different file path can be specified with --polls-file.
 pollingPlacesFile = 'Polling_Locations_2022.csv'
+pollingPlacesSlug = 'polling-locations-2022'
 
 # https://data.boston.gov/dataset/boston-ward-boundaries
 # Overridable with --wards-file
 wardBoundariesFile = 'Boston_Ward_Boundaries.geojson'
+wardBoundariesSlug = 'boston-ward-boundaries'
 
 # https://data.boston.gov/dataset/boston-precinct-boundaries
 # Overridable with --precincts-file
 precinctBoundariesFile = 'Boston_Precinct_Boundaries.geojson'
+precinctBoundariesSlug = 'boston-precinct-boundaries'
 
 # https://data.boston.gov/dataset/live-street-address-management-sam-addresses
 #
 # A different file path can be specified with --addresses-file.
 addressesFile = 'Live_Street_Address_Management_(SAM)_Addresses.geojson.bz2'
+addressesSlug = 'live-street-address-management-sam-addresses'
 
 # A different file path can be specified with --pickle-=file.
 pickleFile = 'preprocessed.pickle'
@@ -125,6 +131,14 @@ def main():
        the browser to produce the final product.
     '''
     args = parse_args()
+
+    if args.download:
+        download(pollingPlacesSlug, 'CSV', args.polls_file)
+        download(wardBoundariesSlug, 'GeoJSON', args.wards_file)
+        download(precinctBoundariesSlug, 'GeoJSON', args.precincts_file)
+        download(addressesSlug, 'GeoJSON', args.addresses_file)
+        args.pickle_read = False
+
     pickleRead = False
     if args.pickle_read:
         try:
@@ -206,6 +220,11 @@ def parse_args():
                         action=argparse.BooleanOptionalAction,
                         help='Print sheets for polling places with only '
                         'one precinct')
+    parser.add_argument('--download', default=False, action='store_true',
+                        help='Download new versions of files from '
+                        'data.boston.gov. Implies --no-pickle-read because '
+                        'if you\'ve just downloaded new versions then you '
+                        'should parse them.')
     return parser.parse_args()
 
 
@@ -737,6 +756,25 @@ def findPrecinct(args, address):
     except StopIteration:
         return None
     return precinct['wp']
+
+
+def download(slug, _type, target):
+    response = requests.get(f'https://data.boston.gov/api/3/action/'
+                            f'package_show?id={slug}')
+    response.raise_for_status()
+    data = response.json()
+    url = next(r for r in data['result']['resources']
+               if r['name'] == _type)['url']
+    response = requests.get(url, stream=True)
+    response.raise_for_status()
+    if target.endswith('.bz2'):
+        ofunc = bz2.open
+    else:
+        ofunc = open
+    with ofunc(f'{target}.new', 'wb') as f:
+        for chunk in response.iter_content(chunk_size=1024*1024):
+            f.write(chunk)
+    os.rename(f'{target}.new', target)
 
 
 if __name__ == '__main__':
