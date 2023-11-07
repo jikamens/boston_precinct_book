@@ -629,7 +629,7 @@ def renderPages(args, pollNames, pollAddresses):
             columnHeader = '''
                 <td style="vertical-align: top;">
                 <table class="columnTable"><tbody>
-                <tr><th align="left">Street</th><th>#s</th><th>Side</th>
+                <tr><th align="left">Street</th><th>#</th><th>Side</th>
                 <th>Prec.</th></tr>'''
             columnFooter = '</tbody></table></td>'
             print(pageHeader())
