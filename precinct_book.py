@@ -100,6 +100,10 @@ precinctFixes = {
     # What the heck
     '0502A': '0502',
 }
+zipCodeFixes = {
+    # 644R Adams Street is in 02122, not 02124
+    161351: "02122",
+}
 
 
 def main():
@@ -312,8 +316,9 @@ def readAddresses(args):
     features = geojson.load(ofunc(args.addresses_file, 'rb'))['features']
     for feature in features:
         row = stripAll(feature['properties'])
+        _id = row['SAM_ADDRESS_ID']
         errorKey = (f'{row["FULL_ADDRESS"], row["MAILING_NEIGHBORHOOD"]} '
-                    f'(#{row["SAM_ADDRESS_ID"]})')
+                    f'(#{_id})')
         isRange = bool(int(row['IS_RANGE']))
         if isRange:
             rangeStart = numberPrefix(row['RANGE_FROM'])
@@ -347,7 +352,8 @@ def readAddresses(args):
                 (row['STREET_PREFIX'], row['STREET_BODY'],
                  row['STREET_SUFFIX_ABBR'], row['STREET_SUFFIX_DIR'])
                 if p)
-            key = (number, street, row['ZIP_CODE'])
+            zip = zipCodeFixes.get(_id, row['ZIP_CODE'])
+            key = (number, street, zip)
             if addresses.get(key, wardPrecinct) != wardPrecinct:
                 # Non-range entries preferred over range entries, because a
                 # range can start and end in different precincts but only
@@ -357,17 +363,16 @@ def readAddresses(args):
                         continue
                     del ranges[key]
                 else:
-                    id1 = row['SAM_ADDRESS_ID']
                     id2 = ids[key]
                     print(f'Ward/Precinct mismatch for {key}: '
-                          f'{wardPrecinct} at {id1} vs. '
+                          f'{wardPrecinct} at {_id} vs. '
                           f'{addresses[key]} at {id2}',
                           file=sys.stderr)
                     continue
             if isRange:
                 ranges[key] = True
             addresses[key] = wardPrecinct
-            ids[key] = row['SAM_ADDRESS_ID']
+            ids[key] = _id
     return addresses
 
 
