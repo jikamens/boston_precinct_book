@@ -271,20 +271,7 @@ def groupPollingPlaces(args, polls):
 
 
 def readAddresses(args):
-    '''Read addresses and their ward/precinct assignments from CSV
-
-    I've determined empirically that the CSV from data.boston.gov has two
-    fields in it that determine the ward and precinct. The `WARD` field has the
-    obvious meaning, and the `PRECINCT_WARD` field appears to be the precinct
-    plus 100 times the ward, so to extract the precinct from it we multiply the
-    ward by 100 and subtract it from this field. This sometimes produces an
-    invalid ward/precinct. I don't know what to make of this so until I figure
-    it out, addresses with invalid ward/precinct values are simply being
-    ignored.
-
-    As of 2023-07-19 there's one `PRECINCT_WARD` field in the data that has the
-    value `0502A`. I have no idea what that means, so for the time being I'm
-    removing the `A` and treating it as ward 5, precinct 2.
+    '''Read addresses and their ward/precinct assignments from GeoJSON
 
     This function assumes that street numbers start with one or more digits.
     Addresses that don't meet that condition are warned about and ignored
