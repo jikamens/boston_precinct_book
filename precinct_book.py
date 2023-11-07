@@ -100,9 +100,6 @@ precinctFixes = {
     # What the heck
     '0502A': '0502',
 }
-addressPrecinctFixes = {
-    (60, 'N Crescent Cirt', '02135'): (22, 7),
-}
 
 
 def main():
@@ -351,8 +348,7 @@ def readAddresses(args):
                  row['STREET_SUFFIX_ABBR'], row['STREET_SUFFIX_DIR'])
                 if p)
             key = (number, street, row['ZIP_CODE'])
-            thisWardPrecinct = addressPrecinctFixes.get(key, wardPrecinct)
-            if addresses.get(key, thisWardPrecinct) != thisWardPrecinct:
+            if addresses.get(key, wardPrecinct) != wardPrecinct:
                 # Non-range entries preferred over range entries, because a
                 # range can start and end in different precincts but only
                 # one precinct can be specified in its entry.
@@ -364,13 +360,13 @@ def readAddresses(args):
                     id1 = row['SAM_ADDRESS_ID']
                     id2 = ids[key]
                     print(f'Ward/Precinct mismatch for {key}: '
-                          f'{thisWardPrecinct} at {id1} vs. '
+                          f'{wardPrecinct} at {id1} vs. '
                           f'{addresses[key]} at {id2}',
                           file=sys.stderr)
                     continue
             if isRange:
                 ranges[key] = True
-            addresses[key] = thisWardPrecinct
+            addresses[key] = wardPrecinct
             ids[key] = row['SAM_ADDRESS_ID']
     return addresses
 
