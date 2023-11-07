@@ -415,9 +415,16 @@ def collapseAddresses(args, poll, addresses, addressPolls):
     # multiple times in different ZIP codes. The complicated code below works
     # around this by ignoring the ZIP code when processing data for an
     # individual polling place.
-    pollAddresses = list(list(t) for t in set(
-        ((k[0], k[1]), addresses[k]) for k, v in addressPolls.items()
-        if v == poll))
+    pollAddresses = {}
+    for k, v in ((k, v) for k, v in addressPolls.items() if v == poll):
+        numStreet = (k[0], k[1])
+        wp = addresses[k]
+        if pollAddresses.get(numStreet, wp) != wp:
+            print(f'{k[0]}, {k[1]} occurs twice at {poll}!',
+                  file=sys.stderr)
+            continue
+        pollAddresses[numStreet] = wp
+    pollAddresses = list([k, v] for k, v in pollAddresses.items())
 
     # pollAddresses is now a list of lists, each of which is:
     # [(street number, street name), (ward, precinct)]
