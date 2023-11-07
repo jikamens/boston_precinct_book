@@ -37,11 +37,13 @@ import argparse
 import bz2
 from collections import defaultdict
 import csv
+import geojson
 import html
 from itertools import chain
 import math
 import pickle
 import re
+from shapely.geometry import shape
 import sys
 
 # https://data.boston.gov/dataset/polling-locations-2022
@@ -49,25 +51,18 @@ import sys
 # A different file path can be specified with --polls-file.
 pollingPlacesFile = 'Polling_Locations_2022.csv'
 
+# https://data.boston.gov/dataset/boston-ward-boundaries
+# Overridable with --wards-file
+wardBoundariesFile = 'Boston_Ward_Boundaries.geojson'
+
+# https://data.boston.gov/dataset/boston-precinct-boundaries
+# Overridable with --precincts-file
+precinctBoundariesFile = 'Boston_Precinct_Boundaries.geojson'
+
 # https://data.boston.gov/dataset/live-street-address-management-sam-addresses
 #
 # A different file path can be specified with --addresses-file.
-#
-# The data in this file is bad. Several examples:
-#
-# * When I search for 9 Appleton St Boston in the state voter database, it
-#   claims ward 5 / precinct 14, but that's not what this file says.
-# * This file actually lists two different precints for that same 9 Appleton
-#   St address: apartment 305 says 4 / 1, but all the other apartments
-#   say 5 / 1.
-# * Addresses on Adams St in Dorchester are listed redundantly in 02122 and
-#   02124. Both Google Maps and the USPS believe this is wrong (the correct
-#   ZIP is 02122).
-#
-# Because the data here is bad I can't use this to generate fully accurate
-# one-pagers, but I can at least use it for the time being to demonstrate
-# what the one-pagers will look like when I have access to fully accurate data.
-addressesFile = 'Live_Street_Address_Management_(SAM)_Addresses.csv.bz2'
+addressesFile = 'Live_Street_Address_Management_(SAM)_Addresses.geojson.bz2'
 
 # A different file path can be specified with --pickle-=file.
 pickleFile = 'preprocessed.pickle'
@@ -180,7 +175,14 @@ def parse_args():
                         'places CSV downloaded from data.boston.gov')
     parser.add_argument('--addresses-file', action='store',
                         default=addressesFile, help='Path of SAM addresses '
-                        'CSV downloaded from data.boston.gov')
+                        'geojson downloaded from data.boston.gov')
+    parser.add_argument('--wards-file', action='store',
+                        default=wardBoundariesFile, help='Path of ward '
+                        'boundaries geojson downloaded from data.boston.gov')
+    parser.add_argument('--precincts-file', action='store',
+                        default=precinctBoundariesFile, help='Path of '
+                        'precinct boundaries geojson downloaded from '
+                        'data.boston.gov')
     parser.add_argument('--column-rows', type=int, action='store',
                         default=columnRows,
                         help='Number of data rows per column, determined '
@@ -302,6 +304,7 @@ def readAddresses(args):
     Returns: Dict mapping address keys to ward/precinct tuples. Each address
     key is a tuple of street number, street name, ZIP code.
     '''
+    loadWards(args)
     addresses = {}
     ranges = {}
     ids = {}
@@ -309,75 +312,66 @@ def readAddresses(args):
         ofunc = bz2.open
     else:
         ofunc = open
-    with ofunc(args.addresses_file, 'r', encoding='utf-8-sig') as f:
-        reader = csv.DictReader(f)
-        for row in (stripAll(row) for row in reader):
-            errorKey = f'{row["FULL_ADDRESS"], row["MAILING_NEIGHBORHOOD"]}'
-            if not row['WARD']:
-                print(f'{errorKey} has no ward', file=sys.stderr)
-                continue
-            if not row['PRECINCT_WARD']:
-                print(f'{errorKey} has no precinct', file=sys.stderr)
-                continue
-            isRange = bool(int(row['IS_RANGE']))
-            if isRange:
-                rangeStart = numberPrefix(row['RANGE_FROM'])
-                try:
-                    # At least one address has "P" as the end of the range
-                    # ("1-P South St"), whatever the heck that means.
-                    rangeEnd = numberPrefix(row['RANGE_TO'])
-                except Exception:
-                    print(f'{errorKey} has bad RANGE_TO {row["RANGE_TO"]}, '
-                          f'ignoring it', file=sys.stderr)
-                    rangeEnd = rangeStart
-            else:
-                try:
-                    rangeStart = numberPrefix(row['STREET_NUMBER'])
-                except Exception:
-                    print(f'{errorKey} has bad street number', file=sys.stderr)
-                    continue
-                rangeEnd = rangeStart
-            ward = int(row['WARD'])
-            precinctWard = precinctFixes.get(
-                row['PRECINCT_WARD'], row['PRECINCT_WARD'])
+    features = geojson.load(ofunc(args.addresses_file, 'rb'))['features']
+    for feature in features:
+        row = stripAll(feature['properties'])
+        errorKey = (f'{row["FULL_ADDRESS"], row["MAILING_NEIGHBORHOOD"]} '
+                    f'(#{row["SAM_ADDRESS_ID"]})')
+        isRange = bool(int(row['IS_RANGE']))
+        if isRange:
+            rangeStart = numberPrefix(row['RANGE_FROM'])
             try:
-                precinct = (int(precinctWard) - ward * 100)
-            except ValueError:
-                print(f'{errorKey} has bad precinct value {precinctWard}',
-                      file=sys.stderr)
+                # At least one address has "P" as the end of the range
+                # ("1-P South St"), whatever the heck that means.
+                rangeEnd = numberPrefix(row['RANGE_TO'])
+            except Exception:
+                print(f'{errorKey} has bad RANGE_TO {row["RANGE_TO"]}, '
+                      f'ignoring it', file=sys.stderr)
+                rangeEnd = rangeStart
+        else:
+            try:
+                rangeStart = numberPrefix(row['STREET_NUMBER'])
+            except Exception:
+                print(f'{errorKey} has bad street number', file=sys.stderr)
                 continue
+            rangeEnd = rangeStart
 
-            wardPrecinct = (ward, precinct)
-            # It appears that ranges are always for just one side of the
-            # street, hence the step value of 2 here.
-            for number in range(rangeStart, rangeEnd + 1, 2):
-                street = ' '.join(
-                    p for p in
-                    (row['STREET_PREFIX'], row['STREET_BODY'],
-                     row['STREET_SUFFIX_ABBR'], row['STREET_SUFFIX_DIR'])
-                    if p)
-                key = (number, street, row['ZIP_CODE'])
-                thisWardPrecinct = addressPrecinctFixes.get(key, wardPrecinct)
-                if addresses.get(key, thisWardPrecinct) != thisWardPrecinct:
-                    # Non-range entries preferred over range entries, because a
-                    # range can start and end in different precincts but only
-                    # one precinct can be specified in its entry.
-                    if isRange != ranges.get(key, False):
-                        if isRange:
-                            continue
-                        del ranges[key]
-                    else:
-                        id1 = row['SAM_ADDRESS_ID']
-                        id2 = ids[key]
-                        print(f'Ward/Precinct mismatch for {key}: '
-                              f'{thisWardPrecinct} at {id1} vs. '
-                              f'{addresses[key]} at {id2}',
-                              file=sys.stderr)
+        wardPrecinct = findPrecinct(args, feature)
+        if not wardPrecinct:
+            print(f'Could not geolocate {errorKey} in any precinct',
+                  file=sys.stderr)
+            continue
+
+        # It appears that ranges are always for just one side of the
+        # street, hence the step value of 2 here.
+        for number in range(rangeStart, rangeEnd + 1, 2):
+            street = ' '.join(
+                p for p in
+                (row['STREET_PREFIX'], row['STREET_BODY'],
+                 row['STREET_SUFFIX_ABBR'], row['STREET_SUFFIX_DIR'])
+                if p)
+            key = (number, street, row['ZIP_CODE'])
+            thisWardPrecinct = addressPrecinctFixes.get(key, wardPrecinct)
+            if addresses.get(key, thisWardPrecinct) != thisWardPrecinct:
+                # Non-range entries preferred over range entries, because a
+                # range can start and end in different precincts but only
+                # one precinct can be specified in its entry.
+                if isRange != ranges.get(key, False):
+                    if isRange:
                         continue
-                if isRange:
-                    ranges[key] = True
-                addresses[key] = thisWardPrecinct
-                ids[key] = row['SAM_ADDRESS_ID']
+                    del ranges[key]
+                else:
+                    id1 = row['SAM_ADDRESS_ID']
+                    id2 = ids[key]
+                    print(f'Ward/Precinct mismatch for {key}: '
+                          f'{thisWardPrecinct} at {id1} vs. '
+                          f'{addresses[key]} at {id2}',
+                          file=sys.stderr)
+                    continue
+            if isRange:
+                ranges[key] = True
+            addresses[key] = thisWardPrecinct
+            ids[key] = row['SAM_ADDRESS_ID']
     return addresses
 
 
@@ -708,12 +702,46 @@ def findContiguousRanges(group, key=None):
 
 
 def stripAll(dct):
-    return {k: v.strip() for k, v in dct.items()}
+    return {k: v.strip() if isinstance(v, str) else v
+            for k, v in dct.items()}
 
 
 def numberPrefix(num):
     match = re.match(r'^\d+', num)
     return int(match[0])
+
+
+def loadWards(args):
+    wards = geojson.load(open(args.wards_file, "rb"))['features']
+    for ward in wards:
+        ward['shape'] = shape(ward['geometry'])
+
+    precincts = geojson.load(open(args.precincts_file, "rb"))['features']
+    for precinct in precincts:
+        precinct['shape'] = shape(precinct['geometry'])
+        precinct['wp'] = (int(precinct['properties']['Ward1']),
+                          int(precinct['properties']['Precinct1']))
+
+    for ward in wards:
+        ward['precincts'] = [
+            p for p in precincts
+            if ward['properties']['Ward1'] == p['properties']['Ward1']
+        ]
+        if not ward['precincts']:
+            raise Exception(
+                f'No precincts for ward {ward["properties"]["Ward1"]}')
+    args.wards = wards
+
+
+def findPrecinct(args, address):
+    location = shape(address['geometry'])
+    try:
+        ward = next(w for w in args.wards if location.within(w['shape']))
+        precinct = next(p for p in ward['precincts']
+                        if location.within(p['shape']))
+    except StopIteration:
+        return None
+    return precinct['wp']
 
 
 if __name__ == '__main__':
