@@ -43,30 +43,50 @@ from itertools import chain
 import math
 import os
 import pickle
+from pyproj import Transformer
 import re
 import requests
+from shapely.ops import transform
 from shapely.geometry import shape
 import sys
+
+# Because as of 2024-03-02 the majority of the data files we're using here use
+# the EPSG:4326 coordinate system, we convert any data files that aren't in
+# that coordinate system into it.
 
 # https://data.boston.gov/dataset/polling-locations-2022
 #
 # A different file path can be specified with --polls-file.
+#
+# We don't use the X and Y coordinates in this file so the script doesn't
+# bother to try to convert them between coordinate systems, but for the record,
+# as of 2024-03-02 they appear to be in EPSG:4326.
 pollingPlacesFile = 'Polling_Locations_2022.csv'
 pollingPlacesSlug = 'polling-locations-2022'
 
 # https://data.boston.gov/dataset/boston-ward-boundaries
 # Overridable with --wards-file
+#
+# As of 2024-03-02, the coordinate system listed in this file is
+# "urn:ogc:def:crs:OGC:1.3:CRS84", a.k.a. EPSG:4326.
 wardBoundariesFile = 'Boston_Ward_Boundaries.geojson'
 wardBoundariesSlug = 'boston-ward-boundaries'
 
 # https://data.boston.gov/dataset/boston-precinct-boundaries
 # Overridable with --precincts-file
+#
+# As of 2024-03-02, the coordinate system listed in this file is EPSG:3857.
+# Who knows why they changed it or why it's different from other files on the
+# open data site. :shrug:
 precinctBoundariesFile = 'Boston_Precinct_Boundaries.geojson'
 precinctBoundariesSlug = 'boston-precinct-boundaries'
 
 # https://data.boston.gov/dataset/live-street-address-management-sam-addresses
 #
 # A different file path can be specified with --addresses-file.
+#
+# As of 2024-03-02, the coordinate system listed in this file is
+# "urn:ogc:def:crs:OGC:1.3:CRS84", a.k.a. EPSG:4326.
 addressesFile = 'Live_Street_Address_Management_(SAM)_Addresses.geojson.bz2'
 addressesSlug = 'live-street-address-management-sam-addresses'
 
@@ -319,7 +339,13 @@ def readAddresses(args):
         ofunc = bz2.open
     else:
         ofunc = open
-    features = geojson.load(ofunc(args.addresses_file, 'rb'))['features']
+    geo = geojson.load(ofunc(args.addresses_file, 'rb'))
+
+    features = geo['features']
+    for feature in features:
+        feature['shape'] = shape(feature['geometry'])
+    transformCoordinates(geo['crs']['properties']['name'], 4326, features)
+
     for feature in features:
         row = stripAll(feature['properties'])
         _id = row['SAM_ADDRESS_ID']
@@ -726,15 +752,19 @@ def numberPrefix(num):
 
 
 def loadWards(args):
-    wards = geojson.load(open(args.wards_file, "rb"))['features']
+    geo = geojson.load(open(args.wards_file, "rb"))
+    wards = geo['features']
     for ward in wards:
         ward['shape'] = shape(ward['geometry'])
+    transformCoordinates(geo['crs']['properties']['name'], 4326, wards)
 
-    precincts = geojson.load(open(args.precincts_file, "rb"))['features']
+    geo = geojson.load(open(args.precincts_file, "rb"))
+    precincts = geo['features']
     for precinct in precincts:
         precinct['shape'] = shape(precinct['geometry'])
         precinct['wp'] = (int(precinct['properties']['Ward1']),
                           int(precinct['properties']['Precinct1']))
+    transformCoordinates(geo['crs']['properties']['name'], 4326, precincts)
 
     for ward in wards:
         ward['precincts'] = [
@@ -748,7 +778,7 @@ def loadWards(args):
 
 
 def findPrecinct(args, address):
-    location = shape(address['geometry'])
+    location = address['shape']
     try:
         ward = next(w for w in args.wards if location.within(w['shape']))
         precinct = next(p for p in ward['precincts']
@@ -775,6 +805,28 @@ def download(slug, _type, target):
         for chunk in response.iter_content(chunk_size=1024*1024):
             f.write(chunk)
     os.rename(f'{target}.new', target)
+
+
+def transformCoordinates(fromCrs, toCrs, features):
+    if fromCrs == toCrs:
+        return
+    fromCrs = normalizeCrs(fromCrs)
+    toCrs = normalizeCrs(toCrs)
+    if fromCrs == toCrs:
+        return
+    transformer = Transformer.from_crs(fromCrs, toCrs, always_xy=True)
+    for feature in features:
+        feature['shape'] = transform(transformer.transform, feature['shape'])
+
+
+def normalizeCrs(crs):
+    if isinstance(crs, int):
+        # Already EPSG number
+        return crs
+    if crs.startswith('EPSG:'):
+        return int(crs[5:])
+    if crs == "urn:ogc:def:crs:OGC:1.3:CRS84":
+        return 4326
 
 
 if __name__ == '__main__':
