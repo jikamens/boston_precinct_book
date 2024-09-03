@@ -24,7 +24,7 @@ import sys
 # the EPSG:4326 coordinate system, we convert any data files that aren't in
 # that coordinate system into it.
 
-# https://data.boston.gov/dataset/polling-locations-2022
+# https://data.boston.gov/dataset/polling-locations-20221
 #
 # A different file path can be specified with --polls-file.
 #
@@ -32,7 +32,7 @@ import sys
 # bother to try to convert them between coordinate systems, but for the record,
 # as of 2024-03-02 they appear to be in EPSG:4326.
 pollingPlacesFile = 'Polling_Locations_2022.csv'
-pollingPlacesSlug = 'polling-locations-2022'
+pollingPlacesSlug = 'polling-locations-20221'
 
 # https://data.boston.gov/dataset/boston-ward-boundaries
 # Overridable with --wards-file
