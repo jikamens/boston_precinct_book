@@ -215,6 +215,8 @@ def parse_args():
                         'data.boston.gov. Implies --no-pickle-read because '
                         'if you\'ve just downloaded new versions then you '
                         'should parse them.')
+    parser.add_argument('--output-file', '-o', action='store',
+                        help='Output file (default: stdout)')
     return parser.parse_args()
 
 
@@ -575,22 +577,24 @@ class HtmlRenderPages:
         self.names = names
         self.addresses = addresses
         self.pageCount = 0
+        self.output = open(args.output_file, 'w') if args.output_file \
+            else sys.stdout
 
     def render(self):
-        print('<html>')
-        print('<head>')
-        print('<meta charset="utf-8">')
+        print('<html>', file=self.output)
+        print('<head>', file=self.output)
+        print('<meta charset="utf-8">', file=self.output)
         print('''<style>
             .columnTable th{background-color: #c2c2c2;}
             .columnTable tr:nth-child(even){background-color: #e2e2e2;}
-            </style>''')
-        print('</head>')
-        print('<body>')
+            </style>''', file=self.output)
+        print('</head>', file=self.output)
+        print('<body>', file=self.output)
 
         for poll in self.polls:
             self.printPoll(poll)
 
-        print('</body></html>')
+        print('</body></html>', file=self.output)
 
     def printPoll(self, poll):
         addresses = self.addresses[poll]
@@ -629,21 +633,22 @@ class HtmlRenderPages:
             columnFooter = '</tbody></table></td>'
             print(self.pageHeader(poll, multipleWards,
                                   None if pollColumns < 3 else
-                                  int(1+columnCount/2)))
-            print(columnHeader)
+                                  int(1+columnCount/2)), file=self.output)
+            print(columnHeader, file=self.output)
             for start, end, street, wardPrecinct, which in addresses:
                 if rowCount and not rowCount % pollColumnRows:
-                    print(columnFooter)
+                    print(columnFooter, file=self.output)
                     columnCount += 1
                     if not columnCount % 2:
-                        print(self.pageFooter())
+                        print(self.pageFooter(), file=self.output)
                         print(self.pageHeader(poll, multipleWards,
                                               None if pollColumns < 3 else
-                                              int(1+columnCount/2)))
-                    print(columnHeader)
+                                              int(1+columnCount/2)),
+                              file=self.output)
+                    print(columnHeader, file=self.output)
                 rowCount += 1
-                print('<tr>')
-                print(f'<td>{html.escape(street)}</td>')
+                print('<tr>', file=self.output)
+                print(f'<td>{html.escape(street)}</td>', file=self.output)
                 if start is None and end is None:
                     numbers = ''
                 elif start is None:
@@ -661,18 +666,19 @@ class HtmlRenderPages:
                     which = ''
                 else:
                     which = which.title()
-                print(f'<td style="font-family: monospace;">{numbers}</td>')
-                print(f'<td>{which}</td>')
+                print(f'<td style="font-family: monospace;">{numbers}</td>',
+                      file=self.output)
+                print(f'<td>{which}</td>', file=self.output)
                 if multipleWards:
                     wardPrecinct = (f'{wardPrecinct[0]}-'
                                     f'{nbspPad(wardPrecinct[1], precinctPad)}')
                 else:
                     wardPrecinct = wardPrecinct[1]
                 print(f'<td style="font-family: monospace; text-align: right;"'
-                      f'>{wardPrecinct}</td>')
-                print('</tr>')
-            print(columnFooter)
-            print(self.pageFooter(pollEnd=True))
+                      f'>{wardPrecinct}</td>', file=self.output)
+                print('</tr>', file=self.output)
+            print(columnFooter, file=self.output)
+            print(self.pageFooter(pollEnd=True), file=self.output)
 
     def pageHeader(self, poll, multipleWards, pageNum):
         title = self.names[poll]
