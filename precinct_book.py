@@ -567,26 +567,35 @@ def mergeContiguous(args, group, which, validator=None):
     return merged
 
 
-def renderPages(args, pollNames, pollAddresses):
+class HtmlRenderPages:
     '''Generate HTML output with CSS page-break markers'''
-    print('<html>')
-    print('<head>')
-    print('<meta charset="utf-8">')
-    print('''<style>
-        .columnTable th{background-color: #c2c2c2;}
-        .columnTable tr:nth-child(even){background-color: #e2e2e2;}
-        </style>''')
-    print('</head>')
-    print('<body>')
-    pageCount = [0]
-    # We want pages to come out in a consistent order, so let's produce a sort
-    # key based on the wards and precincts at each poll.
-    sortKeys = {poll: tuple(sorted(set(a[3] for a in addresses)))
-                for poll, addresses in pollAddresses.items()}
-    for poll in sorted(pollAddresses.keys(), key=lambda p: sortKeys[p]):
-        addresses = pollAddresses[poll]
+    def __init__(self, args, polls, names, addresses):
+        self.args = args
+        self.polls = polls
+        self.names = names
+        self.addresses = addresses
+        self.pageCount = 0
 
-        pollColumnRows = args.column_rows
+    def render(self):
+        print('<html>')
+        print('<head>')
+        print('<meta charset="utf-8">')
+        print('''<style>
+            .columnTable th{background-color: #c2c2c2;}
+            .columnTable tr:nth-child(even){background-color: #e2e2e2;}
+            </style>''')
+        print('</head>')
+        print('<body>')
+
+        for poll in self.polls:
+            self.printPoll(poll)
+
+        print('</body></html>')
+
+    def printPoll(self, poll):
+        addresses = self.addresses[poll]
+
+        pollColumnRows = self.args.column_rows
         pollColumns = math.ceil(len(addresses) / pollColumnRows)
         if pollColumns > 2:
             # Make room for the page number
@@ -594,38 +603,19 @@ def renderPages(args, pollNames, pollAddresses):
             pollColumns = math.ceil(len(addresses) / pollColumnRows)
 
         wards = set(a[3][0] for a in addresses)
-        includeWard = len(wards) > 1
+        multipleWards = len(wards) > 1
         precincts = set(a[3] for a in addresses)
-        if not args.print_homogeneous and len(precincts) == 1:
-            continue
-        if args.copies_per_precinct or args.copies_per_polling_place:
-            copies = (args.copies_per_precinct or 0) * len(precincts) + \
-                (args.copies_per_polling_place or 0)
+        if not self.args.print_homogeneous and len(precincts) == 1:
+            return
+        if self.args.copies_per_precinct or self.args.copies_per_polling_place:
+            copies = (self.args.copies_per_precinct or 0) * len(precincts) + \
+                (self.args.copies_per_polling_place or 0)
         else:
             copies = 1
 
         precinctPad = max(len(str(a[3][1])) for a in addresses)
         addressPad = max(len(str(v)) for v in chain.from_iterable(
             (a[0], a[1]) for a in addresses))
-
-        def pageHeader():
-            title = pollNames[poll]
-            if not includeWard:
-                title += f' (Ward {addresses[0][3][0]})'
-            header = f'<h2>{html.escape(title)}</h2>'
-            if pollColumns > 2:
-                header += f'<h3>Page {int(1+columnCount/2)}'
-            header += '<table width="100%" style="page-break-after: always;">'
-            header += '<tbody>'
-            return header
-
-        def pageFooter(pollEnd=False):
-            pageCount[0] += 1
-            footer = '</tbody></table>'
-            if args.double_sided and pollEnd and pageCount[0] % 2:
-                pageCount[0] += 1
-                footer += '<div style="page-break-after: always;"></div>'
-            return footer
 
         for i in range(copies):
             rowCount = 0
@@ -637,15 +627,19 @@ def renderPages(args, pollNames, pollAddresses):
                 <tr><th align="left">Street</th><th>#</th><th>Side</th>
                 <th>Prec.</th></tr>'''
             columnFooter = '</tbody></table></td>'
-            print(pageHeader())
+            print(self.pageHeader(poll, multipleWards,
+                                  None if pollColumns < 3 else
+                                  int(1+columnCount/2)))
             print(columnHeader)
             for start, end, street, wardPrecinct, which in addresses:
                 if rowCount and not rowCount % pollColumnRows:
                     print(columnFooter)
                     columnCount += 1
                     if not columnCount % 2:
-                        print(pageFooter())
-                        print(pageHeader())
+                        print(self.pageFooter())
+                        print(self.pageHeader(poll, multipleWards,
+                                              None if pollColumns < 3 else
+                                              int(1+columnCount/2)))
                     print(columnHeader)
                 rowCount += 1
                 print('<tr>')
@@ -669,7 +663,7 @@ def renderPages(args, pollNames, pollAddresses):
                     which = which.title()
                 print(f'<td style="font-family: monospace;">{numbers}</td>')
                 print(f'<td>{which}</td>')
-                if includeWard:
+                if multipleWards:
                     wardPrecinct = (f'{wardPrecinct[0]}-'
                                     f'{nbspPad(wardPrecinct[1], precinctPad)}')
                 else:
@@ -678,8 +672,35 @@ def renderPages(args, pollNames, pollAddresses):
                       f'>{wardPrecinct}</td>')
                 print('</tr>')
             print(columnFooter)
-            print(pageFooter(pollEnd=True))
-    print('</body></html>')
+            print(self.pageFooter(pollEnd=True))
+
+    def pageHeader(self, poll, multipleWards, pageNum):
+        title = self.names[poll]
+        if not multipleWards:
+            title += f' (Ward {self.addresses[poll][0][3][0]})'
+        header = f'<h2>{html.escape(title)}</h2>'
+        if pageNum:
+            header += f'<h3>Page {pageNum}'
+        header += '<table width="100%" style="page-break-after: always;">'
+        header += '<tbody>'
+        return header
+
+    def pageFooter(self, pollEnd=False):
+        self.pageCount += 1
+        footer = '</tbody></table>'
+        if self.args.double_sided and pollEnd and self.pageCount % 2:
+            self.pageCount += 1
+            footer += '<div style="page-break-after: always;"></div>'
+        return footer
+
+
+def renderPages(args, pollNames, pollAddresses):
+    # We want pages to come out in a consistent order, so let's produce a sort
+    # key based on the wards and precincts at each poll.
+    sortKeys = {poll: tuple(sorted(set(a[3] for a in addresses)))
+                for poll, addresses in pollAddresses.items()}
+    polls = sorted(pollAddresses.keys(), key=lambda p: sortKeys[p])
+    HtmlRenderPages(args, polls, pollNames, pollAddresses).render()
 
 
 def nbspPad(val, width):
