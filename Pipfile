@@ -8,6 +8,8 @@ geojson = "*"
 shapely = "*"
 pyproj = "*"
 requests = "*"
+pycairo = "*"
+pygobject = "*"
 
 [dev-packages]
 

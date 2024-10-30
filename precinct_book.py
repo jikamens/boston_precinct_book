@@ -2,9 +2,11 @@
 
 import argparse
 import bz2
+import cairo
 from collections import defaultdict
 import csv
 import geojson
+import gi
 import html
 from itertools import chain
 import math
@@ -16,6 +18,11 @@ import requests
 from shapely.ops import transform
 from shapely.geometry import shape
 import sys
+
+gi.require_version('Pango', '1.0')
+gi.require_version('PangoCairo', '1.0')
+
+from gi.repository import Pango, PangoCairo  # noqa
 
 # Note that in the code and comments below, "poll" is used as a synonym for
 # "polling place."
@@ -190,10 +197,10 @@ def parse_args():
                         'data.boston.gov')
     parser.add_argument('--column-rows', type=int, action='store',
                         default=columnRows,
-                        help='Number of data rows per column, determined '
-                        'empirically by how many rows fit when you print from '
-                        'your browser with the desired print settings '
-                        f'(default: {columnRows})')
+                        help='Number of data rows per column for HTML '
+                        'rendering, determined empirically by how many rows '
+                        'fit when you print from your browser with the '
+                        f'desired print settings (default: {columnRows})')
     parser.add_argument('--double-sided', default=True,
                         action=argparse.BooleanOptionalAction,
                         help='Insert extra page breaks to keep each polling '
@@ -215,7 +222,9 @@ def parse_args():
                         'data.boston.gov. Implies --no-pickle-read because '
                         'if you\'ve just downloaded new versions then you '
                         'should parse them.')
-    parser.add_argument('--output-file', '-o', action='store',
+    parser.add_argument('--output-format', choices=('pdf', 'html'),
+                        default='pdf', help='Output format')
+    parser.add_argument('--output-file', '-o',
                         help='Output file (default: stdout)')
     return parser.parse_args()
 
@@ -569,13 +578,255 @@ def mergeContiguous(args, group, which, validator=None):
     return merged
 
 
-class HtmlRenderPages:
-    '''Generate HTML output with CSS page-break markers'''
+class RenderPages:
     def __init__(self, args, polls, names, addresses):
         self.args = args
         self.polls = polls
         self.names = names
         self.addresses = addresses
+        self._multipleWards = {}
+        self._numPrecincts = {}
+
+    def render(self):
+        raise NotImplementedError
+
+    def multipleWards(self, poll):
+        try:
+            return self._multipleWards[poll]
+        except KeyError:
+            addresses = self.addresses[poll]
+            wards = set(a[3][0] for a in addresses)
+            self._multipleWards[poll] = len(wards) > 1
+            return self._multipleWards[poll]
+
+    def numPrecincts(self, poll):
+        try:
+            return self._numPrecincts[poll]
+        except KeyError:
+            addresses = self.addresses[poll]
+            self._numPrecincts[poll] = len(set(a[3] for a in addresses))
+            return self._numPrecincts[poll]
+
+    def pageTitle(self, poll):
+        multipleWards = self.multipleWards(poll)
+        title = self.names[poll]
+        if not multipleWards:
+            title += f' (Ward\u00A0{self.addresses[poll][0][3][0]})'
+        return title
+
+    def numCopies(self, poll):
+        if self.args.copies_per_precinct or self.args.copies_per_polling_place:
+            return (self.args.copies_per_precinct or 0) * \
+                self.numPrecincts(poll) + \
+                (self.args.copies_per_polling_place or 0)
+        return 1
+
+
+class PdfRenderPages(RenderPages):
+    '''Generate PDF output using Pango and Cairo'''
+    page_width = 8.5 * 72
+    page_height = 11 * 72
+    margin_width = .4 * 72
+    title_spacing = 0.25 * 72
+    column_spacing = 0.25 * 72
+    street_pct = 50
+    number_pct = 11
+    dash_pct = 3
+    side_pct = 12
+    precinct_pct = 13
+    header_grey = 0.7
+    data_grey = 0.9
+    header_font = 'Times New Roman'
+    header_min_font_size = 18
+    header_max_font_size = 24
+    body_font = 'Times New Roman'
+    body_font_size = 12
+    page_number_font = 'Times New Roman'
+    page_number_font_size = 8
+
+    def __init__(self, args, polls, names, addresses):
+        super().__init__(args, polls, names, addresses)
+        self.pageCount = 0
+        self.output = open(args.output_file, 'wb') if args.output_file \
+            else sys.stdout.buffer
+        self.content_width = self.page_width - self.margin_width * 2
+        self.content_bottom = self.page_height - self.margin_width
+        self.column_width = (self.content_width - self.column_spacing) / 2
+        self.column_starts = (
+            self.margin_width,
+            self.margin_width + self.column_width + self.column_spacing)
+        self.street_width = self.column_width * self.street_pct / 100
+        self.number_width = self.column_width * self.number_pct / 100
+        self.dash_width = self.column_width * self.dash_pct / 100
+        self.side_width = self.column_width * self.side_pct / 100
+        self.precinct_width = self.column_width * self.precinct_pct / 100
+
+        self.surface = cairo.PDFSurface(
+            self.output, self.page_width, self.page_height)
+        self.ctx = cairo.Context(self.surface)
+
+    def render(self):
+        for poll in self.polls:
+            if not self.args.print_homogeneous and \
+               self.numPrecincts(poll) == 1:
+                continue
+            for copy in range(self.numCopies(poll)):
+                self.printPoll(poll)
+
+        self.surface.finish()
+        self.surface.flush()
+
+    def printPoll(self, poll):
+        addresses = self.addresses[poll].copy()
+        pageNumber = 0
+        while addresses:
+            self.ctx.move_to(self.margin_width, self.margin_width)
+            layout = self.fitToWidth(
+                self.margin_width, self.pageTitle(poll), self.content_width,
+                self.header_font, self.header_max_font_size,
+                min_font_size=self.header_min_font_size)
+            PangoCairo.show_layout(self.ctx, layout)
+            _ink, rect = layout.get_extents()
+            column_top = self.margin_width + rect.height / Pango.SCALE + \
+                self.title_spacing
+            for left in self.column_starts:
+                self.printColumn(poll, addresses, left, column_top)
+                if not addresses:
+                    break
+            if addresses or pageNumber:
+                self.ctx.move_to(
+                    self.margin_width, column_top - self.title_spacing)
+                layout = self.fitToWidth(
+                    column_top - self.title_spacing,
+                    f'Page {pageNumber+1}', self.content_width,
+                    self.page_number_font, self.page_number_font_size)
+                PangoCairo.show_layout(self.ctx, layout)
+            pageNumber += 1
+            self.surface.show_page()
+        if self.args.double_sided and pageNumber % 2:
+            self.surface.show_page()
+
+    def printColumn(self, poll, addresses, x, y):
+        height = self.printColumnHeader(x, y)
+        y += height
+        multipleWards = self.multipleWards(poll)
+        grey = None
+        last_street = ""
+        while addresses:
+            start, end, street, precinct, which = addresses[0]
+            start = str(start) if start else ""
+            end = str(end) if end else ""
+            hyphen = "–" if (start or end) else ""
+            which = which if (which and which != "all") else ""
+            if multipleWards:
+                precinct = f'{precinct[0]}-{precinct[1]}'
+            else:
+                precinct = str(precinct[1])
+            height = self.printRow(x, y, grey=grey, cells=(
+                (street if street != last_street else "", self.street_width),
+                (start, self.number_width),
+                (hyphen, self.dash_width),
+                (end, self.number_width),
+                (which, self.side_width),
+                (precinct, self.precinct_width)))
+            last_street = street
+            grey = None if grey else self.data_grey
+            if height:
+                y += height
+                addresses.pop(0)
+            else:
+                return None
+        return height
+
+    def printColumnHeader(self, start_x, start_y):
+        val = self.printRow(
+            start_x, start_y, html=True, grey=self.header_grey,
+            cells=(('<b>Street</b>', self.street_width),
+                   ('<b>#</b>', self.number_width * 2 + self.dash_width),
+                   ('<b>Side</b>', self.side_width),
+                   ('<b>Prec.</b>', self.precinct_width)))
+        return val
+
+    def printRow(self, x, y, cells=(), html=False, grey=None):
+        layouts = []
+        for text, width in cells:
+            layout = self.fitToWidth(y, text, width, self.body_font,
+                                     self.body_font_size, html=html,
+                                     bottom=self.content_bottom)
+            if not layout:
+                return None
+            layouts.append((layout, width))
+        height = max(layout.get_extents()[1].height / Pango.SCALE
+                     for layout, width in layouts)
+        if grey:
+            width = sum(width for layout, width in layouts)
+            self.ctx.set_source_rgb(grey, grey, grey)
+            self.ctx.rectangle(x, y, width, height)
+            self.ctx.fill()
+            self.ctx.set_source_rgb(0, 0, 0)
+        for layout, width in layouts:
+            self.ctx.move_to(x, y)
+            PangoCairo.show_layout(self.ctx, layout)
+            x += width
+        return height
+
+    def fitToWidth(self, y, text, want_width, font_name, max_font_size,
+                   min_font_size=None, bottom=None, html=False):
+        wrapping = max_font_size == min_font_size
+        font_size = max_font_size
+        layout = PangoCairo.create_layout(self.ctx)
+        font_description = Pango.font_description_from_string(
+            f'{font_name}, {font_size}')
+        layout.set_font_description(font_description)
+        if wrapping:
+            layout.set_width(want_width * Pango.SCALE)
+        (layout.set_markup if html else layout.set_text)(text)
+        ink_rect, logical_rect = layout.get_extents()
+        logical_right_edge = logical_rect.x + logical_rect.width
+        got_width = logical_right_edge / Pango.SCALE
+
+        if not wrapping:
+            if got_width > want_width:
+                font_size = want_width / got_width * font_size
+                layout = PangoCairo.create_layout(self.ctx)
+                font_description = Pango.font_description_from_string(
+                    f'{font_name}, {font_size}')
+                layout.set_font_description(font_description)
+                (layout.set_markup if html else layout.set_text)(text)
+                ink_rect, logical_rect = layout.get_extents()
+                logical_right_edge = logical_rect.x + logical_rect.width
+                got_width = logical_right_edge / Pango.SCALE
+
+            # I don't understand why I need to do this twice, but for some
+            # reason after the first resize above the font is still sticking
+            # out a little bit past the right edge of the area we want it in.
+            if got_width > want_width:
+                font_size = want_width / got_width * font_size
+                layout = PangoCairo.create_layout(self.ctx)
+                font_description = Pango.font_description_from_string(
+                    f'{font_name}, {font_size}')
+                layout.set_font_description(font_description)
+                (layout.set_markup if html else layout.set_text)(text)
+                ink_rect, logical_rect = layout.get_extents()
+                logical_right_edge = logical_rect.x + logical_rect.width
+                got_width = logical_right_edge / Pango.SCALE
+
+            if min_font_size and font_size < min_font_size:
+                return self.fitToWidth(y, text, want_width, font_name,
+                                       min_font_size, min_font_size, bottom)
+
+        if bottom:
+            new_y = y + logical_rect.height / Pango.SCALE
+            if new_y > bottom:
+                return None
+
+        return layout
+
+
+class HtmlRenderPages(RenderPages):
+    '''Generate HTML output with CSS page-break markers'''
+    def __init__(self, args, polls, names, addresses):
+        super().__init__(args, polls, names, addresses)
         self.pageCount = 0
         self.output = open(args.output_file, 'w') if args.output_file \
             else sys.stdout
@@ -606,16 +857,9 @@ class HtmlRenderPages:
             pollColumnRows -= 1
             pollColumns = math.ceil(len(addresses) / pollColumnRows)
 
-        wards = set(a[3][0] for a in addresses)
-        multipleWards = len(wards) > 1
-        precincts = set(a[3] for a in addresses)
-        if not self.args.print_homogeneous and len(precincts) == 1:
+        if not self.args.print_homogeneous and self.numPrecincts(poll) == 1:
             return
-        if self.args.copies_per_precinct or self.args.copies_per_polling_place:
-            copies = (self.args.copies_per_precinct or 0) * len(precincts) + \
-                (self.args.copies_per_polling_place or 0)
-        else:
-            copies = 1
+        copies = self.numCopies(poll)
 
         precinctPad = max(len(str(a[3][1])) for a in addresses)
         addressPad = max(len(str(v)) for v in chain.from_iterable(
@@ -631,7 +875,7 @@ class HtmlRenderPages:
                 <tr><th align="left">Street</th><th>#</th><th>Side</th>
                 <th>Prec.</th></tr>'''
             columnFooter = '</tbody></table></td>'
-            print(self.pageHeader(poll, multipleWards,
+            print(self.pageHeader(poll,
                                   None if pollColumns < 3 else
                                   int(1+columnCount/2)), file=self.output)
             print(columnHeader, file=self.output)
@@ -641,7 +885,7 @@ class HtmlRenderPages:
                     columnCount += 1
                     if not columnCount % 2:
                         print(self.pageFooter(), file=self.output)
-                        print(self.pageHeader(poll, multipleWards,
+                        print(self.pageHeader(poll,
                                               None if pollColumns < 3 else
                                               int(1+columnCount/2)),
                               file=self.output)
@@ -669,7 +913,7 @@ class HtmlRenderPages:
                 print(f'<td style="font-family: monospace;">{numbers}</td>',
                       file=self.output)
                 print(f'<td>{which}</td>', file=self.output)
-                if multipleWards:
+                if self.multipleWards(poll):
                     wardPrecinct = (f'{wardPrecinct[0]}-'
                                     f'{nbspPad(wardPrecinct[1], precinctPad)}')
                 else:
@@ -680,10 +924,8 @@ class HtmlRenderPages:
             print(columnFooter, file=self.output)
             print(self.pageFooter(pollEnd=True), file=self.output)
 
-    def pageHeader(self, poll, multipleWards, pageNum):
-        title = self.names[poll]
-        if not multipleWards:
-            title += f' (Ward {self.addresses[poll][0][3][0]})'
+    def pageHeader(self, poll, pageNum):
+        title = self.pageTitle(poll)
         header = f'<h2>{html.escape(title)}</h2>'
         if pageNum:
             header += f'<h3>Page {pageNum}'
@@ -706,7 +948,10 @@ def renderPages(args, pollNames, pollAddresses):
     sortKeys = {poll: tuple(sorted(set(a[3] for a in addresses)))
                 for poll, addresses in pollAddresses.items()}
     polls = sorted(pollAddresses.keys(), key=lambda p: sortKeys[p])
-    HtmlRenderPages(args, polls, pollNames, pollAddresses).render()
+    if args.output_format == 'pdf':
+        PdfRenderPages(args, polls, pollNames, pollAddresses).render()
+    else:
+        HtmlRenderPages(args, polls, pollNames, pollAddresses).render()
 
 
 def nbspPad(val, width):
