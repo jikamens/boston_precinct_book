@@ -21,11 +21,6 @@ purpose of the script in this repository.
 
 The working mechanisms of the script are documented in the script itself.
 
-One important note... After running the script, before printing the HTML from
-the browser, you should scroll through the print preview to make sure that none
-of the pages went too long. If any did, you'll need to reduce `columnRows`
-below or specify a smaller value on the command line with `--column-rows`.
-
 Author
 ------
 
