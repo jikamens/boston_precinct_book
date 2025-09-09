@@ -216,7 +216,7 @@ def parse_args():
     parser.add_argument('--print-homogeneous', default=False,
                         action=argparse.BooleanOptionalAction,
                         help='Print sheets for polling places with only '
-                        'one precinct')
+                        'one precinct (default: False)')
     parser.add_argument('--download', default=False, action='store_true',
                         help='Download new versions of files from '
                         'data.boston.gov. Implies --no-pickle-read because '
