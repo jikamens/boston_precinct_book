@@ -259,6 +259,11 @@ def readPollingPlaces(args):
     poll_names = {}
     with open(args.polls_file, 'r', encoding='utf-8-sig') as f:
         reader = csv.DictReader(f)
+        # smdh
+        # invalid literal for int() with base 10: '1.000000000000000'
+        row['USER_Ward'] = re.sub(r'(\.(\d+?))0+', r'\1', row['USER_Ward'])
+        row['USER_Precinct'] = re.sub(r'(\.(\d+?))0+', r'\1',
+                                      row['USER_Precinct'])
         for row in (stripAll(row) for row in reader):
             wardPrecinct = (int(row['USER_Ward']), int(row['USER_Precinct']))
             location2 = location2Fixes.get(wardPrecinct, row['USER_Location2'])
