@@ -108,6 +108,87 @@ zipCodeFixes = {
     161351: "02122",
 }
 
+# Keep in zip + street name order
+wardPrecinctFixes = {
+    ((60, 'Beacon St', '02108'), (5, 3)): (5, 5),
+    # Not in SoS database
+    ((1, 'Charles St', '02108'), (5, 3)): (5, 5),
+    # 449-451 Not in SoS database, making it match its neighbor
+    ((449, 'Washington St', '02111'), (3, 13)): (3, 12),
+    ((451, 'Washington St', '02111'), (3, 13)): (3, 12),
+    ((453, 'Washington St', '02111'), (3, 13)): (3, 12),
+    # 455-463 Not in SoS database
+    ((455, 'Washington St', '02111'), (3, 13)): (3, 12),
+    ((457, 'Washington St', '02111'), (3, 13)): (3, 12),
+    ((459, 'Washington St', '02111'), (3, 13)): (3, 12),
+    ((461, 'Washington St', '02111'), (3, 13)): (3, 12),
+    ((463, 'Washington St', '02111'), (3, 13)): (3, 12),
+    ((4, 'Webster Pl', '02113'), (3, 11)): (3, 2),
+    # Not in SoS database
+    ((46, 'Fenway', '02115'), (5, 15)): (4, 12),
+    # Not in SoS database
+    ((295, 'Huntington Ave', '02115'), (4, 8)): (4, 5),
+    ((9, 'Appleton St', '02116'), (4, 1)): (5, 14),
+    ((234, 'Newbury St', '02116'), (5, 6)): (5, 8),
+    ((37, 'Rutland Sq', '02118'), (9, 1)): (4, 4),
+    ((52, 'Union Park', '02118'), (4, 1)): (3, 7),
+    ((16, 'Union Park St', '02118'), (3, 7)): (3, 16),
+    # 1104-1130 Not in SoS database
+    ((1104, 'Washington St', '02118'), (3, 15)): (3, 16),
+    ((1106, 'Washington St', '02118'), (3, 15)): (3, 16),
+    ((1108, 'Washington St', '02118'), (3, 15)): (3, 16),
+    ((1110, 'Washington St', '02118'), (3, 15)): (3, 16),
+    ((1112, 'Washington St', '02118'), (3, 15)): (3, 16),
+    ((1114, 'Washington St', '02118'), (3, 15)): (3, 16),
+    ((1116, 'Washington St', '02118'), (3, 15)): (3, 16),
+    ((1118, 'Washington St', '02118'), (3, 15)): (3, 16),
+    ((1120, 'Washington St', '02118'), (3, 15)): (3, 16),
+    ((1122, 'Washington St', '02118'), (3, 15)): (3, 16),
+    ((1124, 'Washington St', '02118'), (3, 15)): (3, 16),
+    ((1126, 'Washington St', '02118'), (3, 15)): (3, 16),
+    ((1128, 'Washington St', '02118'), (3, 15)): (3, 16),
+    ((1130, 'Washington St', '02118'), (3, 15)): (3, 16),
+    ((33, 'Worcester Sq', '02118'), (9, 2)): (8, 2),
+    ((20, 'Circuit St', '02119'), (12, 1)): (12, 3),
+    # Not in SoS database
+    ((1234, 'Columbus Ave', '02119'), (9, 5)): (11, 1),
+    ((4, 'Kearsarge Ave', '02119'), (9, 4)): (12, 1),
+    # Not in SoS database
+    ((183, 'Norfolk Ave', '02119'), (8, 6)): (8, 5),
+    # 74-77 Not in SoS database
+    ((74, 'Walnut Park', '02119'), (11, 4)): (11, 3),
+    ((77, 'Walnut Park', '02119'), (11, 4)): (11, 5),
+    ((79, 'Walnut Park', '02119'), (11, 4)): (11, 5),
+    ((2937, 'Washington St', '02119'), (11, 2)): (11, 4),
+    ((22, 'Saint Cyprians Pl', '02120'), (9, 3)): (9, 7),
+    ((15, 'Ellington St', '02121'), (14, 4)): (14, 3),
+    ((261, 'Adams St', '02122'), (15, 8)): (16, 1),
+    ((644, 'Adams St', '02122'), (16, 8)): (16, 9),
+    # Not in SoS database
+    ((54, 'Clayton St', '02122'), (15, 8)): (15, 9),
+    ((100, 'Gibson St', '02122'), (16, 1)): (16, 2),
+    ((14, 'Longfellow St', '02122'), (15, 5)): (15, 7),
+    ((16, 'Longfellow St', '02122'), (15, 5)): (15, 7),
+    # Not in SoS database
+    ((10, 'Minot St', '02122'), (16, 9)): (16, 10),
+    ((12, 'Minot St', '02122'), (16, 9)): (16, 10),
+    ((14, 'Minot St', '02122'), (16, 9)): (16, 10),
+    ((64, 'Minot St', '02122'), (16, 10)): (16, 9),
+    ((66, 'Minot St', '02122'), (16, 10)): (16, 9),
+    ((70, 'Minot St', '02122'), (16, 10)): (16, 9),
+    ((87, 'Clarkson St', '02125'), (15, 3)): (15, 2),
+    ((480, 'E Seventh St', '02127'), (7, 2)): (7, 3),
+    # Not in SoS database
+    ((44, 'K St', '02127'), (6, 7)): (7, 1),
+    ((141, 'W Broadway', '02127'), (6, 1)): (6, 2),
+    ((960, 'Saratoga St', '02128'), (1, 13)): (1, 11),
+    # Not in SoS database
+    ((529, 'Main St', '02129'), (2, 7)): (2, 1),
+    ((70, 'Wyman St', '02130'), (10, 6)): (10, 9),
+    ((249, 'Corey St', '02132'), (20, 17)): (20, 20),
+    ((85, 'Westminster St', '02136'), (18, 14)): (18, 15),
+}
+
 
 def main():
     '''Script controller
@@ -372,6 +453,8 @@ def readAddresses(args):
                 if p)
             zip = zipCodeFixes.get(_id, row['ZIP_CODE'])
             key = (number, street, zip)
+            wardPrecinct = wardPrecinctFixes.get((key, wardPrecinct),
+                                                 wardPrecinct)
             if addresses.get(key, wardPrecinct) != wardPrecinct:
                 # Non-range entries preferred over range entries, because a
                 # range can start and end in different precincts but only
