@@ -418,7 +418,7 @@ def readAddresses(args):
     features = geo['features']
     for feature in features:
         feature['shape'] = shape(feature['geometry'])
-    transformCoordinates(geo['crs']['properties']['name'], 4326, features)
+    # transformCoordinates(geo['crs']['properties']['name'], 4326, features)
 
     for feature in features:
         row = stripAll(feature['properties'])
@@ -1093,7 +1093,7 @@ def loadWards(args):
     wards = geo['features']
     for ward in wards:
         ward['shape'] = shape(ward['geometry'])
-    transformCoordinates(geo['crs']['properties']['name'], 4326, wards)
+    # transformCoordinates(geo['crs']['properties']['name'], 4326, wards)
 
     geo = geojson.load(open(args.precincts_file, "rb"))
     precincts = geo['features']
@@ -1101,7 +1101,7 @@ def loadWards(args):
         precinct['shape'] = shape(precinct['geometry'])
         precinct['wp'] = (int(precinct['properties']['Ward1']),
                           int(precinct['properties']['Precinct1']))
-    transformCoordinates(geo['crs']['properties']['name'], 4326, precincts)
+    # transformCoordinates(geo['crs']['properties']['name'], 4326, precincts)
 
     for ward in wards:
         ward['precincts'] = [
