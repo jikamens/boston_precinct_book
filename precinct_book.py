@@ -346,7 +346,8 @@ def readPollingPlaces(args):
             row['USER_Ward'] = re.sub(r'(\.(\d+?))0+', r'\1', row['USER_Ward'])
             row['USER_Precinct'] = re.sub(r'(\.(\d+?))0+', r'\1',
                                           row['USER_Precinct'])
-            wardPrecinct = (int(row['USER_Ward']), int(row['USER_Precinct']))
+            wardPrecinct = (stringToInt(row['USER_Ward']),
+                            stringToInt(row['USER_Precinct']))
             location2 = location2Fixes.get(wardPrecinct, row['USER_Location2'])
             if args.poll_key == 'address':
                 key = matchAddrFixes.get(wardPrecinct, row['Match_addr'])
@@ -362,6 +363,12 @@ def readPollingPlaces(args):
             polls[wardPrecinct] = key
             poll_names[key] = name
     return polls, poll_names
+
+
+def stringToInt(str):
+    # Sigh, integers stored as floats
+    str = re.sub(r'\.0+$', '', str)
+    return int(str)
 
 
 def groupPollingPlaces(args, polls):
