@@ -304,7 +304,7 @@ def parse_args():
                         'if you\'ve just downloaded new versions then you '
                         'should parse them.')
     parser.add_argument('--output-format', choices=('pdf', 'html'),
-                        default='pdf', help='Output format')
+                        default='pdf', help='Output format (default: pdf)')
     parser.add_argument('--output-file', '-o',
                         help='Output file (default: stdout)')
     return parser.parse_args()
