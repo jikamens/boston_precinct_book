@@ -809,10 +809,14 @@ class PdfRenderPages(RenderPages):
         last_street = ""
         while addresses:
             start, end, street, precinct, which = addresses[0]
-            start = str(start) if start else ""
-            end = str(end) if end else ""
-            hyphen = "–" if (start or end) else ""
-            which = which if (which and which != "all") else ""
+            if start and start == end:
+                start = str(start)
+                end = hyphen = which = ""
+            else:
+                start = str(start) if start else ""
+                end = str(end) if end and start != end else ""
+                hyphen = "–" if (start or end) else ""
+                which = which if (which and which != "all") else ""
             if multipleWards:
                 precinct = f'{precinct[0]}-{precinct[1]}'
             else:
